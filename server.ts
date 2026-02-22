@@ -163,10 +163,11 @@ async function startServer() {
   app.get("/api/balances", async (req, res) => {
     try {
       const { address, chains, tokenAddress } = req.query;
-      const moralisKey = process.env.MORALIS_API_KEY;
-      const heliusKey = process.env.HELIUS_API_KEY;
+      const moralisKey = process.env.MORALIS_API_KEY?.trim();
+      const heliusKey = process.env.HELIUS_API_KEY?.trim();
 
       if (!address) return res.status(400).json({ error: "Address is required" });
+      console.log(`[Balance Scanner] Request for address: ${address}, chains: ${chains}`);
 
       const chainMap: Record<string, string> = {
         "eth": "0x1",
@@ -195,7 +196,7 @@ async function startServer() {
             balances.push({
               chain: "BSC",
               symbol: symbol,
-              amount: (balance / BigInt(10 ** decimals)).toString(),
+              amount: ethers.formatUnits(balance, decimals),
               valueUsd: 0,
               tokenAddress: tokenAddress
             });
@@ -207,8 +208,9 @@ async function startServer() {
         }
       }
 
-      // Fetch EVM Balances via Moralis
+      // Fetch EVM Balances
       if (moralisKey) {
+        console.log(`Scanning EVM balances for ${address} via Moralis...`);
         const evmChains = (chains as string || "eth,bsc,polygon").split(",");
         for (const c of evmChains) {
           const chainId = chainMap[c.toLowerCase()];
@@ -235,23 +237,68 @@ async function startServer() {
             balances.push({
               chain: c.toUpperCase(),
               symbol: c.toUpperCase() === "ETH" ? "ETH" : c.toUpperCase() === "BSC" ? "BNB" : "MATIC",
-              amount: (BigInt(nativeResponse.data.balance) / BigInt(1e18)).toString(),
-              valueUsd: 0, // Would need price feed for real USD value
+              amount: ethers.formatEther(nativeResponse.data.balance),
+              valueUsd: 0,
               isNative: true
             });
 
             response.data.forEach((token: any) => {
-              balances.push({
-                chain: c.toUpperCase(),
-                symbol: token.symbol,
-                amount: (BigInt(token.balance) / BigInt(10 ** token.decimals)).toString(),
-                valueUsd: 0,
-                tokenAddress: token.token_address
-              });
+              const balance = BigInt(token.balance || 0);
+              if (balance > 0n) {
+                balances.push({
+                  chain: c.toUpperCase(),
+                  symbol: token.symbol,
+                  amount: ethers.formatUnits(balance, token.decimals),
+                  valueUsd: 0,
+                  tokenAddress: token.token_address
+                });
+              }
             });
           } catch (e) {
-            console.error(`Error fetching ${c} balances:`, e);
+            console.error(`Error fetching ${c} balances via Moralis:`, e);
           }
+        }
+      } else {
+        // Fallback: Basic RPC Scan for BSC (Most common for Trust Wallet users)
+        console.log(`No Moralis key, falling back to BSC RPC scan for ${address}...`);
+        try {
+          const bscRpc = process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org/";
+          const provider = new ethers.JsonRpcProvider(bscRpc);
+          
+          // 1. Native BNB
+          const nativeBalance = await provider.getBalance(address as string);
+          if (nativeBalance > 0n) {
+            balances.push({
+              chain: "BSC",
+              symbol: "BNB",
+              amount: ethers.formatEther(nativeBalance),
+              valueUsd: 0,
+              isNative: true
+            });
+          }
+
+          // 2. Common Tokens (USDT on BSC)
+          const commonTokens = [
+            { address: "0x55d398326f99059fF775485246999027B3197955", symbol: "USDT" },
+            { address: "0xe9e7cea3dedca5984780bafc599bd69add087d56", symbol: "BUSD" }
+          ];
+
+          const abi = ["function balanceOf(address) view returns (uint256)"];
+          for (const token of commonTokens) {
+            const contract = new ethers.Contract(token.address, abi, provider);
+            const balance = await contract.balanceOf(address);
+            if (balance > 0n) {
+              balances.push({
+                chain: "BSC",
+                symbol: token.symbol,
+                amount: ethers.formatUnits(balance, 18),
+                valueUsd: 0,
+                tokenAddress: token.address
+              });
+            }
+          }
+        } catch (e) {
+          console.error("RPC Fallback Error:", e);
         }
       }
 
@@ -275,13 +322,17 @@ async function startServer() {
           
           response.data.result.items.forEach((item: any) => {
             if (item.token_info) {
-              balances.push({
-                chain: "SOLANA",
-                symbol: item.token_info.symbol,
-                amount: (item.token_info.balance / (10 ** item.token_info.decimals)).toString(),
-                valueUsd: 0,
-                tokenAddress: item.id
-              });
+              const balance = BigInt(item.token_info.balance || 0);
+              if (balance > 0n) {
+                const decimals = item.token_info.decimals || 0;
+                balances.push({
+                  chain: "SOLANA",
+                  symbol: item.token_info.symbol,
+                  amount: ethers.formatUnits(balance, decimals),
+                  valueUsd: 0,
+                  tokenAddress: item.id
+                });
+              }
             }
           });
         } catch (e) {

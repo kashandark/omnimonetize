@@ -461,27 +461,43 @@ function MonetizationPanel() {
   const [bestRouters, setBestRouters] = useState<Record<string, '1inch' | 'odos'>>({});
   const [priceImpacts, setPriceImpacts] = useState<Record<string, number>>({});
   const [customTokenAddress, setCustomTokenAddress] = useState("");
+  const [manualScanAddress, setManualScanAddress] = useState("");
   const [isAddingToken, setIsAddingToken] = useState(false);
+  const [showManualScan, setShowManualScan] = useState(false);
 
   const fetchAssets = async () => {
-    if (!account) return [];
+    const targetAddress = manualScanAddress || account;
+    if (!targetAddress) return [];
+    const scanToast = toast.loading(`Scanning assets for ${targetAddress.slice(0,6)}...`, { id: 'asset-scan' });
     try {
-      const res = await fetch(`/api/balances?address=${account}&chains=eth,bsc,polygon,solana`);
+      const res = await fetch(`/api/balances?address=${targetAddress}&chains=eth,bsc,polygon,solana,base`);
       if (!res.ok) throw new Error('Failed to fetch balances');
       const data = await res.json();
       
-      return (data.balances || []).map((b: any, i: number) => ({
-        id: `${b.chain}-${b.symbol}-${i}`,
-        chain: b.chain,
-        symbol: b.symbol,
-        amount: parseFloat(b.amount).toFixed(4),
-        valueUsd: 0,
-        icon: `https://cryptologos.cc/logos/${b.symbol.toLowerCase()}-${b.symbol.toLowerCase()}-logo.png`,
-        tokenAddress: b.tokenAddress,
-        isNative: b.isNative
-      }));
+      const mappedAssets = (data.balances || []).map((b: any, i: number) => {
+        const amount = parseFloat(b.amount);
+        return {
+          id: `${b.chain}-${b.symbol}-${i}`,
+          chain: b.chain,
+          symbol: b.symbol,
+          amount: amount < 0.0001 ? b.amount : amount.toFixed(4),
+          valueUsd: 0,
+          icon: `https://cryptologos.cc/logos/${b.symbol.toLowerCase()}-${b.symbol.toLowerCase()}-logo.png`,
+          tokenAddress: b.tokenAddress,
+          isNative: b.isNative
+        };
+      });
+      
+      if (mappedAssets.length > 0) {
+        toast.success(`Found ${mappedAssets.length} assets`, { id: 'asset-scan' });
+      } else {
+        toast.dismiss('asset-scan');
+      }
+      
+      return mappedAssets;
     } catch (e) {
       console.error('Fetch assets error:', e);
+      toast.error('Failed to scan assets. Check console for details.', { id: 'asset-scan' });
       return [];
     }
   };
@@ -493,10 +509,10 @@ function MonetizationPanel() {
   });
 
   useEffect(() => {
-    if (account) {
+    if (account || manualScanAddress) {
       refetchAssets();
     }
-  }, [account, refetchAssets]);
+  }, [account, manualScanAddress, refetchAssets]);
 
   const handleAddCustomToken = async () => {
     if (!customTokenAddress || !account) return;
@@ -754,21 +770,50 @@ function MonetizationPanel() {
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <input 
-                type="text"
-                placeholder="Add by Contract Address (BSC)"
-                value={customTokenAddress}
-                onChange={(e) => setCustomTokenAddress(e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-all"
-              />
-              <button 
-                onClick={handleAddCustomToken}
-                disabled={isAddingToken || !customTokenAddress}
-                className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-sm font-bold hover:bg-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isAddingToken ? 'Adding...' : 'Add'}
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  placeholder="Add by Contract Address (BSC)"
+                  value={customTokenAddress}
+                  onChange={(e) => setCustomTokenAddress(e.target.value)}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-all"
+                />
+                <button 
+                  onClick={handleAddCustomToken}
+                  disabled={isAddingToken || !customTokenAddress}
+                  className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-sm font-bold hover:bg-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAddingToken ? 'Adding...' : 'Add'}
+                </button>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <button 
+                  onClick={() => setShowManualScan(!showManualScan)}
+                  className="text-xs text-white/40 hover:text-white transition-all flex items-center gap-1"
+                >
+                  {showManualScan ? 'Hide Manual Scan' : 'Scan different address?'}
+                </button>
+              </div>
+
+              {showManualScan && (
+                <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <input 
+                    type="text"
+                    placeholder="Enter Wallet Address to Scan"
+                    value={manualScanAddress}
+                    onChange={(e) => setManualScanAddress(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-all"
+                  />
+                  <button 
+                    onClick={() => refetchAssets()}
+                    className="px-4 py-2 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 transition-all"
+                  >
+                    Scan
+                  </button>
+                </div>
+              )}
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -777,7 +822,13 @@ function MonetizationPanel() {
                   <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto">
                     <Coins size={32} className="text-white/20" />
                   </div>
-                  <p className="text-white/40 text-sm">No assets found. Try adding a contract address manually.</p>
+                  <div className="space-y-2">
+                    <p className="text-white/40 text-sm">No assets found automatically.</p>
+                    <p className="text-white/20 text-xs max-w-xs mx-auto">
+                      Note: Automatic scanning requires a <code className="text-emerald-500/50">MORALIS_API_KEY</code>. 
+                      You can still add assets manually using their contract address above.
+                    </p>
+                  </div>
                 </div>
               )}
               {assets?.map((asset: Asset) => (
