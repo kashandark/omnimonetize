@@ -136,12 +136,44 @@ function WalletProvider({ children }: { children: ReactNode }) {
   );
 }
 
+function StatusBar() {
+  const { data: keyStatus } = useQuery({
+    queryKey: ['debug-keys'],
+    queryFn: async () => {
+      const res = await fetch('/api/debug/keys');
+      return res.json();
+    },
+    refetchInterval: 5000
+  });
+
+  return (
+    <div className="fixed bottom-4 left-4 flex gap-2 z-50">
+      {keyStatus && (
+        <>
+          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.moralis ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+            MORALIS: {keyStatus.moralis ? 'OK' : 'MISSING'}
+          </div>
+          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.helius ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+            HELIUS: {keyStatus.helius ? 'OK' : 'MISSING'}
+          </div>
+          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.oneinch ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+            1INCH: {keyStatus.oneinch ? 'OK' : 'MISSING'}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
         <div className="min-h-screen bg-[#0A0A0A] text-white selection:bg-emerald-500/30">
           <Toaster position="top-right" />
+          
+          <StatusBar />
+
           <Header />
           <main className="max-w-7xl mx-auto px-4 py-12">
             <Hero />
@@ -558,7 +590,7 @@ function MonetizationPanel() {
       // Pro Optimization: Compare 1inch vs Odos (Arbitrage-Aware Net Yield)
       try {
         const usdtAddress = '0x55d398326f99059fF775485246999027B3197955';
-        const amountInWei = (parseFloat(asset.amount) * 1e18).toString();
+        const amountInWei = ethers.parseEther(asset.amount).toString();
         const res = await fetch(`/api/prices/dex?chainId=56&fromToken=${asset.tokenAddress || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'}&toToken=${usdtAddress}&amount=${amountInWei}`);
         const data = await res.json();
         
@@ -596,10 +628,10 @@ function MonetizationPanel() {
   };
 
   useEffect(() => {
-    if (step === 2) {
+    if (step === 2 && selectedAssets.length > 0) {
       checkTaxesAndQuotes();
     }
-  }, [step]);
+  }, [step, selectedAssets.length]);
 
   const handleMonetize = async () => {
     if (!account) return;
@@ -621,15 +653,13 @@ function MonetizationPanel() {
           
           // BabyDoge Logic: Account for tax before it leaves the wallet
           const tax = detectedTaxes[asset.id] || 0;
-          const grossAmount = parseFloat(asset.amount);
-          const netAmount = grossAmount * (1 - tax / 100);
-          const amountInWei = (netAmount * 1e18).toString();
-          const grossAmountInWei = (grossAmount * 1e18).toString();
+          const grossAmount = asset.amount;
+          const amountInWei = ethers.parseEther(grossAmount).toString();
           
-          // Pro Tip: Approval must be for GROSS amount, Swap for NET amount
+          // Pro Tip: Approval must be for GROSS amount
           if (!asset.isNative) {
             toast.loading(`Preparing Permit2 for ${asset.symbol} (Gross: ${grossAmount})...`, { id: 'monetize' });
-            // In a real app, we'd call Permit2.approve(grossAmountInWei) here
+            // In a real app, we'd call Permit2.approve(amountInWei) here
           }
           
           const quoteRes = await fetch(`/api/prices/dex?chainId=${chainId}&fromToken=${asset.tokenAddress || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'}&toToken=${usdtAddress}&amount=${amountInWei}`);

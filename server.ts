@@ -11,6 +11,12 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  console.log("[Server] Starting with environment variables:");
+  console.log("- MORALIS_API_KEY:", process.env.MORALIS_API_KEY ? "Present" : "Missing");
+  console.log("- HELIUS_API_KEY:", process.env.HELIUS_API_KEY ? "Present" : "Missing");
+  console.log("- ONEINCH_API_KEY:", process.env.ONEINCH_API_KEY ? "Present" : "Missing");
+  console.log("- BINANCE_API_KEY:", process.env.BINANCE_API_KEY ? "Present" : "Missing");
+
   app.use(express.json());
 
   // --- SECURITY AUDIT: API ENDPOINTS ---
@@ -18,6 +24,16 @@ async function startServer() {
   // 2. Input validation is required for symbol, chainId, and addresses to prevent injection.
   // 3. Rate limiting should be implemented to prevent DDoS on the bridge.
   // 4. No private keys are ever stored or handled by this server (Non-custodial).
+
+  app.get("/api/debug/keys", (req, res) => {
+    res.json({
+      moralis: !!process.env.MORALIS_API_KEY,
+      helius: !!process.env.HELIUS_API_KEY,
+      oneinch: !!process.env.ONEINCH_API_KEY,
+      binance: !!process.env.BINANCE_API_KEY,
+      moralis_length: process.env.MORALIS_API_KEY?.length || 0
+    });
+  });
 
   // 1. CEX Price Fetcher
   app.get("/api/prices/cex", async (req, res) => {
@@ -107,8 +123,8 @@ async function startServer() {
           }
         );
         results.odos = odosResponse.data;
-      } catch (e) {
-        console.error("Odos Quote Error");
+      } catch (e: any) {
+        console.error("Odos Quote Error:", e.response?.data || e.message);
       }
 
       res.json(results);
