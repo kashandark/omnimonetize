@@ -113,7 +113,11 @@ function WalletProvider({ children }: { children: ReactNode }) {
       }
     } catch (error: any) {
       console.error(error);
-      toast.error(error.message || 'Failed to connect wallet');
+      if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
+        toast.error('Connection request cancelled');
+      } else {
+        toast.error(error.message || 'Failed to connect wallet');
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -456,28 +460,66 @@ function MonetizationPanel() {
   const [detectedTaxes, setDetectedTaxes] = useState<Record<string, number>>({});
   const [bestRouters, setBestRouters] = useState<Record<string, '1inch' | 'odos'>>({});
   const [priceImpacts, setPriceImpacts] = useState<Record<string, number>>({});
+  const [customTokenAddress, setCustomTokenAddress] = useState("");
+  const [isAddingToken, setIsAddingToken] = useState(false);
 
   const fetchAssets = async () => {
-    const res = await fetch(`/api/balances?address=${account}&chains=eth,bsc,polygon,solana`);
-    const data = await res.json();
-    
-    return data.balances.map((b: any, i: number) => ({
-      id: `${b.chain}-${b.symbol}-${i}`,
-      chain: b.chain,
-      symbol: b.symbol,
-      amount: parseFloat(b.amount).toFixed(4),
-      valueUsd: 0,
-      icon: `https://cryptologos.cc/logos/${b.symbol.toLowerCase()}-${b.symbol.toLowerCase()}-logo.png`,
-      tokenAddress: b.tokenAddress,
-      isNative: b.isNative
-    }));
+    if (!account) return [];
+    try {
+      const res = await fetch(`/api/balances?address=${account}&chains=eth,bsc,polygon,solana`);
+      if (!res.ok) throw new Error('Failed to fetch balances');
+      const data = await res.json();
+      
+      return (data.balances || []).map((b: any, i: number) => ({
+        id: `${b.chain}-${b.symbol}-${i}`,
+        chain: b.chain,
+        symbol: b.symbol,
+        amount: parseFloat(b.amount).toFixed(4),
+        valueUsd: 0,
+        icon: `https://cryptologos.cc/logos/${b.symbol.toLowerCase()}-${b.symbol.toLowerCase()}-logo.png`,
+        tokenAddress: b.tokenAddress,
+        isNative: b.isNative
+      }));
+    } catch (e) {
+      console.error('Fetch assets error:', e);
+      return [];
+    }
   };
 
-  const { data: assets } = useQuery<Asset[]>({
+  const { data: assets, refetch: refetchAssets, isLoading: isAssetsLoading } = useQuery<Asset[]>({
     queryKey: ['assets', account],
     enabled: !!account,
     queryFn: fetchAssets
   });
+
+  useEffect(() => {
+    if (account) {
+      refetchAssets();
+    }
+  }, [account, refetchAssets]);
+
+  const handleAddCustomToken = async () => {
+    if (!customTokenAddress || !account) return;
+    setIsAddingToken(true);
+    try {
+      // In a real app, we'd fetch token metadata (symbol, decimals) here
+      // For now, we'll try to fetch the balance and add it
+      const res = await fetch(`/api/balances?address=${account}&chains=bsc&tokenAddress=${customTokenAddress}`);
+      const data = await res.json();
+      
+      if (data.balances && data.balances.length > 0) {
+        toast.success('Token added successfully!');
+        refetchAssets();
+        setCustomTokenAddress("");
+      } else {
+        toast.error('Could not find balance for this token.');
+      }
+    } catch (e) {
+      toast.error('Failed to add token.');
+    } finally {
+      setIsAddingToken(false);
+    }
+  };
 
   const checkTaxesAndQuotes = async () => {
     const bscAssets = selectedAssets.filter(a => a.chain === 'BSC');
@@ -697,11 +739,47 @@ function MonetizationPanel() {
             className="flex-1 space-y-6"
           >
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold">Select Assets to Liquidate</h2>
-              <p className="text-white/40 text-sm">Choose the tokens you want to convert to Binance USDT.</p>
+              <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-2xl font-bold">Select Assets to Liquidate</h2>
+                  <p className="text-white/40 text-sm">Choose the tokens you want to convert to Binance USDT.</p>
+                </div>
+                <button 
+                  onClick={() => refetchAssets()}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-all text-white/40 hover:text-white"
+                  title="Refresh Balances"
+                >
+                  <RefreshCw size={18} className={cn(isAssetsLoading && "animate-spin")} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <input 
+                type="text"
+                placeholder="Add by Contract Address (BSC)"
+                value={customTokenAddress}
+                onChange={(e) => setCustomTokenAddress(e.target.value)}
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-all"
+              />
+              <button 
+                onClick={handleAddCustomToken}
+                disabled={isAddingToken || !customTokenAddress}
+                className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-sm font-bold hover:bg-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAddingToken ? 'Adding...' : 'Add'}
+              </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+              {assets?.length === 0 && !isAssetsLoading && (
+                <div className="col-span-full py-12 text-center space-y-4">
+                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto">
+                    <Coins size={32} className="text-white/20" />
+                  </div>
+                  <p className="text-white/40 text-sm">No assets found. Try adding a contract address manually.</p>
+                </div>
+              )}
               {assets?.map((asset: Asset) => (
                 <div 
                   key={asset.id}

@@ -162,7 +162,7 @@ async function startServer() {
   // 3. Multi-chain Balance Scanner (Real implementation using Moralis & Helius)
   app.get("/api/balances", async (req, res) => {
     try {
-      const { address, chains } = req.query;
+      const { address, chains, tokenAddress } = req.query;
       const moralisKey = process.env.MORALIS_API_KEY;
       const heliusKey = process.env.HELIUS_API_KEY;
 
@@ -176,6 +176,36 @@ async function startServer() {
       };
 
       const balances: any[] = [];
+
+      // If a specific token address is provided, fetch just that one (BSC default for manual add)
+      if (tokenAddress) {
+        try {
+          const rpcUrl = process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org/";
+          const provider = new ethers.JsonRpcProvider(rpcUrl);
+          const abi = ["function balanceOf(address) view returns (uint256)", "function symbol() view returns (string)", "function decimals() view returns (uint8)"];
+          const contract = new ethers.Contract(tokenAddress as string, abi, provider);
+          
+          const [balance, symbol, decimals] = await Promise.all([
+            contract.balanceOf(address),
+            contract.symbol().catch(() => "TOKEN"),
+            contract.decimals().catch(() => 18)
+          ]);
+
+          if (balance > 0n) {
+            balances.push({
+              chain: "BSC",
+              symbol: symbol,
+              amount: (balance / BigInt(10 ** decimals)).toString(),
+              valueUsd: 0,
+              tokenAddress: tokenAddress
+            });
+          }
+          return res.json({ address, balances });
+        } catch (e) {
+          console.error("Error fetching specific token:", e);
+          // Fall through to general scan if specific fetch fails
+        }
+      }
 
       // Fetch EVM Balances via Moralis
       if (moralisKey) {
