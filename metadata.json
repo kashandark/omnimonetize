@@ -1,0 +1,5 @@
+{
+  "name": "OmniMonetize",
+  "description": "One-click multi-chain asset liquidation to Binance USDT with zero platform fees.",
+  "requestFramePermissions": ["geolocation"]
+}

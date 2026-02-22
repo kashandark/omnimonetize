@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-[#0A0A0A] text-white font-sans antialiased;
+  }
+}
+
+.glass-card {
+  @apply bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl;
+}
+
+.neon-glow {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
