@@ -112,10 +112,12 @@ function WalletProvider({ children }: { children: ReactNode }) {
         toast.success('TronLink connected!');
       }
     } catch (error: any) {
-      console.error(error);
-      if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
-        toast.error('Connection request cancelled');
+      // Handle user rejection gracefully
+      if (error.code === 'ACTION_REJECTED' || error.code === 4001 || error.message?.includes('rejected')) {
+        toast.error('Connection cancelled by user');
+        console.warn('User rejected wallet connection');
       } else {
+        console.error('Wallet connection error:', error);
         toast.error(error.message || 'Failed to connect wallet');
       }
     } finally {
@@ -136,35 +138,6 @@ function WalletProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function StatusBar() {
-  const { data: keyStatus } = useQuery({
-    queryKey: ['debug-keys'],
-    queryFn: async () => {
-      const res = await fetch('/api/debug/keys');
-      return res.json();
-    },
-    refetchInterval: 5000
-  });
-
-  return (
-    <div className="fixed bottom-4 left-4 flex gap-2 z-50">
-      {keyStatus && (
-        <>
-          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.moralis ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-            MORALIS: {keyStatus.moralis ? 'OK' : 'MISSING'}
-          </div>
-          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.helius ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-            HELIUS: {keyStatus.helius ? 'OK' : 'MISSING'}
-          </div>
-          <div className={`px-2 py-1 rounded text-[10px] font-mono border ${keyStatus.oneinch ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-            1INCH: {keyStatus.oneinch ? 'OK' : 'MISSING'}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -172,8 +145,6 @@ export default function App() {
         <div className="min-h-screen bg-[#0A0A0A] text-white selection:bg-emerald-500/30">
           <Toaster position="top-right" />
           
-          <StatusBar />
-
           <Header />
           <main className="max-w-7xl mx-auto px-4 py-12">
             <Hero />
@@ -482,6 +453,122 @@ function AssetScanner() {
   );
 }
 
+interface SwapCalculatorProps {
+  asset: Asset;
+}
+
+function SwapCalculator({ asset }: SwapCalculatorProps) {
+  const [amount, setAmount] = useState(asset.amount);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [quote, setQuote] = useState<any>(null);
+
+  const chainId = asset.chain === 'ETHEREUM' ? 1 : asset.chain === 'BSC' ? 56 : 137;
+  const usdtAddress = asset.chain === 'ETHEREUM' 
+    ? '0xdAC17F958D2ee523a2206206994597C13D831ec7' 
+    : asset.chain === 'BSC' 
+      ? '0x55d398326f99059fF775485246999027B3197955' 
+      : '0xc2132D05D31c914a87C6611C10748AEb04B58e8F';
+
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!amount || parseFloat(amount) <= 0) {
+        setQuote(null);
+        return;
+      }
+      setIsCalculating(true);
+      try {
+        const amountInWei = ethers.parseEther(amount).toString();
+        const res = await fetch(`/api/prices/dex?chainId=${chainId}&fromToken=${asset.tokenAddress || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'}&toToken=${usdtAddress}&amount=${amountInWei}`);
+        const data = await res.json();
+        setQuote(data);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsCalculating(false);
+      }
+    };
+
+    const timer = setTimeout(fetchQuote, 500);
+    return () => clearTimeout(timer);
+  }, [amount, asset, chainId, usdtAddress]);
+
+  const bestNet = quote ? Math.max(
+    Number(quote.oneinch?.dstAmount || 0) / 1e18,
+    Number(quote.odos?.outputTokens?.[0]?.amount || 0) / 1e18
+  ) : 0;
+
+  return (
+    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-white/60">Swap Calculator</h3>
+        <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
+          <RefreshCw size={10} className={cn(isCalculating && "animate-spin")} />
+          Live Rates
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase">
+            <span>Amount to Swap</span>
+            <span>Balance: {asset.amount} {asset.symbol}</span>
+          </div>
+          <div className="relative">
+            <input 
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500/50 transition-all"
+            />
+            <button 
+              onClick={() => setAmount(asset.amount)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-emerald-500 hover:text-emerald-400 uppercase tracking-widest px-2 py-1 bg-emerald-500/10 rounded"
+            >
+              Max
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center py-1">
+          <div className="w-px h-4 bg-white/10" />
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold text-white/40 uppercase">Estimated Receive</div>
+          <div className="w-full bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center">
+            <span className="text-sm font-bold text-emerald-500">
+              {isCalculating ? 'Calculating...' : `${bestNet.toFixed(2)} USDT`}
+            </span>
+            <span className="text-[10px] font-bold text-white/20 uppercase">
+              via {bestNet === (Number(quote?.odos?.outputTokens?.[0]?.amount || 0) / 1e18) ? 'Odos' : '1inch'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {quote && (
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+          <div className="space-y-1">
+            <div className="text-[8px] font-bold text-white/20 uppercase">Price Impact</div>
+            <div className={cn(
+              "text-[10px] font-bold",
+              (quote.oneinch?.priceImpact || 0) > 2 ? "text-amber-400" : "text-emerald-500"
+            )}>
+              {quote.oneinch?.priceImpact || '0.00'}%
+            </div>
+          </div>
+          <div className="space-y-1 text-right">
+            <div className="text-[8px] font-bold text-white/20 uppercase">Est. Gas</div>
+            <div className="text-[10px] font-bold text-white/60">
+              ${((Number(quote.oneinch?.gas || 0) * 1e9) / 1e18 * 2500).toFixed(2)}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonetizationPanel() {
   const [step, setStep] = useState(1);
   const [selectedAssets, setSelectedAssets] = useState<Asset[]>([]);
@@ -748,8 +835,13 @@ function MonetizationPanel() {
       toast.success('All liquidations completed!', { id: 'monetize' });
       setStep(3);
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || 'Liquidation failed', { id: 'monetize' });
+      if (error.code === 'ACTION_REJECTED' || error.code === 4001 || error.message?.includes('rejected')) {
+        toast.error('Transaction cancelled by user', { id: 'monetize' });
+        console.warn('User rejected transaction');
+      } else {
+        console.error('Liquidation error:', error);
+        toast.error(error.message || 'Liquidation failed', { id: 'monetize' });
+      }
     }
   };
 
@@ -883,6 +975,12 @@ function MonetizationPanel() {
                 </div>
               ))}
             </div>
+
+            {selectedAssets.length > 0 && (
+              <div className="pt-4">
+                <SwapCalculator asset={selectedAssets[selectedAssets.length - 1]} />
+              </div>
+            )}
 
             <div className="mt-auto pt-8">
               <button 
