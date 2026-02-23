@@ -463,6 +463,7 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
   const [isCalculating, setIsCalculating] = useState(false);
   const [quote, setQuote] = useState<any>(null);
 
+  const isUnsupported = asset.chain === 'SOLANA' || asset.chain === 'TRON';
   const chainId = asset.chain === 'ETHEREUM' ? 1 : asset.chain === 'BSC' ? 56 : 137;
   const usdtAddress = asset.chain === 'ETHEREUM' 
     ? '0xdAC17F958D2ee523a2206206994597C13D831ec7' 
@@ -472,7 +473,7 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
 
   useEffect(() => {
     const fetchQuote = async () => {
-      if (!amount || parseFloat(amount) <= 0) {
+      if (isUnsupported || !amount || parseFloat(amount) <= 0) {
         setQuote(null);
         return;
       }
@@ -491,7 +492,7 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
 
     const timer = setTimeout(fetchQuote, 500);
     return () => clearTimeout(timer);
-  }, [amount, asset, chainId, usdtAddress]);
+  }, [amount, asset, chainId, usdtAddress, isUnsupported]);
 
   const usdtDecimals = asset.chain === 'BSC' ? 18 : 6;
 
@@ -499,6 +500,15 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
     Number(quote.oneinch?.dstAmount || 0) / (10 ** usdtDecimals),
     Number(quote.odos?.outputTokens?.[0]?.amount || 0) / (10 ** usdtDecimals)
   ) : 0;
+
+  if (isUnsupported) {
+    return (
+      <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-white/60">Swap Calculator</h3>
+        <p className="text-xs text-white/40 italic">Calculator not available for {asset.chain} assets yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">

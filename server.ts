@@ -118,23 +118,25 @@ async function startServer() {
           ? '0x0000000000000000000000000000000000000000' 
           : toToken;
 
+        const odosPayload = {
+          chainId: parseInt(chainId as string),
+          inputTokens: [{ 
+            tokenAddress: odosFromToken as string, 
+            amount: amount as string 
+          }],
+          outputTokens: [{ 
+            tokenAddress: odosToToken as string, 
+            proportion: 1 
+          }],
+          userAddr: "0x0000000000000000000000000000000000000000",
+          slippageLimitPercent: 0.5,
+          compact: true,
+          referralCode: 0
+        };
+
         const odosResponse = await axios.post(
           `https://api.odos.xyz/sor/quote/v2`,
-          {
-            chainId: parseInt(chainId as string),
-            inputTokens: [{ 
-              tokenAddress: odosFromToken as string, 
-              amount: amount as string 
-            }],
-            outputTokens: [{ 
-              tokenAddress: odosToToken as string, 
-              proportion: 1 
-            }],
-            userAddr: "0x0000000000000000000000000000000000000000",
-            slippageLimitPercent: 0.5,
-            compact: true,
-            referralCode: "omnimonetize"
-          }
+          odosPayload
         );
         results.odos = odosResponse.data;
       } catch (e: any) {
