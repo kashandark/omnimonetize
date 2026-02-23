@@ -108,18 +108,32 @@ async function startServer() {
         }
       }
 
-      // Odos Quote V3
+      // Odos Quote V2/V3
       try {
+        // Normalize native token for Odos
+        const odosFromToken = fromToken === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' 
+          ? '0x0000000000000000000000000000000000000000' 
+          : fromToken;
+        const odosToToken = toToken === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' 
+          ? '0x0000000000000000000000000000000000000000' 
+          : toToken;
+
         const odosResponse = await axios.post(
-          `https://api.odos.xyz/sor/quote/v3`,
+          `https://api.odos.xyz/sor/quote/v2`,
           {
             chainId: parseInt(chainId as string),
-            inputTokens: [{ tokenAddress: fromToken, amount: amount }],
-            outputTokens: [{ tokenAddress: toToken, proportion: 1 }],
+            inputTokens: [{ 
+              tokenAddress: odosFromToken as string, 
+              amount: amount as string 
+            }],
+            outputTokens: [{ 
+              tokenAddress: odosToToken as string, 
+              proportion: 1 
+            }],
             userAddr: "0x0000000000000000000000000000000000000000",
             slippageLimitPercent: 0.5,
             compact: true,
-            referralCode: process.env.ODOS_REFERRAL_CODE || "omnimonetize"
+            referralCode: "omnimonetize"
           }
         );
         results.odos = odosResponse.data;
@@ -265,6 +279,7 @@ async function startServer() {
                   chain: c.toUpperCase(),
                   symbol: token.symbol,
                   amount: ethers.formatUnits(balance, token.decimals),
+                  decimals: token.decimals,
                   valueUsd: 0,
                   tokenAddress: token.token_address
                 });
@@ -288,6 +303,7 @@ async function startServer() {
               chain: "BSC",
               symbol: "BNB",
               amount: ethers.formatEther(nativeBalance),
+              decimals: 18,
               valueUsd: 0,
               isNative: true
             });
@@ -308,6 +324,7 @@ async function startServer() {
                 chain: "BSC",
                 symbol: token.symbol,
                 amount: ethers.formatUnits(balance, 18),
+                decimals: 18,
                 valueUsd: 0,
                 tokenAddress: token.address
               });
@@ -336,21 +353,24 @@ async function startServer() {
             }
           );
           
-          response.data.result.items.forEach((item: any) => {
-            if (item.token_info) {
-              const balance = BigInt(item.token_info.balance || 0);
-              if (balance > 0n) {
-                const decimals = item.token_info.decimals || 0;
-                balances.push({
-                  chain: "SOLANA",
-                  symbol: item.token_info.symbol,
-                  amount: ethers.formatUnits(balance, decimals),
-                  valueUsd: 0,
-                  tokenAddress: item.id
-                });
+          if (response.data && response.data.result && response.data.result.items) {
+            response.data.result.items.forEach((item: any) => {
+              if (item.token_info) {
+                const balance = BigInt(item.token_info.balance || 0);
+                if (balance > 0n) {
+                  const decimals = item.token_info.decimals || 0;
+                  balances.push({
+                    chain: "SOLANA",
+                    symbol: item.token_info.symbol,
+                    amount: ethers.formatUnits(balance, decimals),
+                    decimals: decimals,
+                    valueUsd: 0,
+                    tokenAddress: item.id
+                  });
+                }
               }
-            }
-          });
+            });
+          }
         } catch (e) {
           console.error("Error fetching Solana balances:", e);
         }

@@ -54,6 +54,7 @@ interface Asset {
   icon: string;
   tokenAddress?: string;
   isNative?: boolean;
+  decimals?: number;
 }
 
 function WalletProvider({ children }: { children: ReactNode }) {
@@ -477,7 +478,7 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
       }
       setIsCalculating(true);
       try {
-        const amountInWei = ethers.parseEther(amount).toString();
+        const amountInWei = ethers.parseUnits(amount, asset.decimals || 18).toString();
         const res = await fetch(`/api/prices/dex?chainId=${chainId}&fromToken=${asset.tokenAddress || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'}&toToken=${usdtAddress}&amount=${amountInWei}`);
         const data = await res.json();
         setQuote(data);
@@ -492,9 +493,11 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
     return () => clearTimeout(timer);
   }, [amount, asset, chainId, usdtAddress]);
 
+  const usdtDecimals = asset.chain === 'BSC' ? 18 : 6;
+
   const bestNet = quote ? Math.max(
-    Number(quote.oneinch?.dstAmount || 0) / 1e18,
-    Number(quote.odos?.outputTokens?.[0]?.amount || 0) / 1e18
+    Number(quote.oneinch?.dstAmount || 0) / (10 ** usdtDecimals),
+    Number(quote.odos?.outputTokens?.[0]?.amount || 0) / (10 ** usdtDecimals)
   ) : 0;
 
   return (
@@ -540,7 +543,7 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
               {isCalculating ? 'Calculating...' : `${bestNet.toFixed(2)} USDT`}
             </span>
             <span className="text-[10px] font-bold text-white/20 uppercase">
-              via {bestNet === (Number(quote?.odos?.outputTokens?.[0]?.amount || 0) / 1e18) ? 'Odos' : '1inch'}
+              via {bestNet === (Number(quote?.odos?.outputTokens?.[0]?.amount || 0) / (10 ** usdtDecimals)) ? 'Odos' : '1inch'}
             </span>
           </div>
         </div>
