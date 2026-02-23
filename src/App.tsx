@@ -496,10 +496,12 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
 
   const usdtDecimals = asset.chain === 'BSC' ? 18 : 6;
 
-  const bestNet = quote ? Math.max(
-    Number(quote.oneinch?.dstAmount || 0) / (10 ** usdtDecimals),
-    Number(quote.odos?.outputTokens?.[0]?.amount || 0) / (10 ** usdtDecimals)
-  ) : 0;
+  const bestQuote = quote ? (
+    (Number(quote.odos?.outAmounts?.[0] || 0) / (10 ** usdtDecimals)) > 
+    (Number(quote.oneinch?.dstAmount || 0) / (10 ** usdtDecimals)) 
+    ? { provider: 'Odos', data: quote.odos, amount: Number(quote.odos?.outAmounts?.[0] || 0) / (10 ** usdtDecimals) }
+    : { provider: '1inch', data: quote.oneinch, amount: Number(quote.oneinch?.dstAmount || 0) / (10 ** usdtDecimals) }
+  ) : null;
 
   if (isUnsupported) {
     return (
@@ -550,30 +552,30 @@ function SwapCalculator({ asset }: SwapCalculatorProps) {
           <div className="text-[10px] font-bold text-white/40 uppercase">Estimated Receive</div>
           <div className="w-full bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center">
             <span className="text-sm font-bold text-emerald-500">
-              {isCalculating ? 'Calculating...' : `${bestNet.toFixed(2)} USDT`}
+              {isCalculating ? 'Calculating...' : `${(bestQuote?.amount || 0).toFixed(2)} USDT`}
             </span>
             <span className="text-[10px] font-bold text-white/20 uppercase">
-              via {bestNet === (Number(quote?.odos?.outputTokens?.[0]?.amount || 0) / (10 ** usdtDecimals)) ? 'Odos' : '1inch'}
+              via {bestQuote?.provider || '...'}
             </span>
           </div>
         </div>
       </div>
 
-      {quote && (
+      {bestQuote && (
         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
           <div className="space-y-1">
             <div className="text-[8px] font-bold text-white/20 uppercase">Price Impact</div>
             <div className={cn(
               "text-[10px] font-bold",
-              (quote.oneinch?.priceImpact || 0) > 2 ? "text-amber-400" : "text-emerald-500"
+              (bestQuote.data?.priceImpact || 0) > 2 ? "text-amber-400" : "text-emerald-500"
             )}>
-              {quote.oneinch?.priceImpact || '0.00'}%
+              {bestQuote.data?.priceImpact || '0.00'}%
             </div>
           </div>
           <div className="space-y-1 text-right">
             <div className="text-[8px] font-bold text-white/20 uppercase">Est. Gas</div>
             <div className="text-[10px] font-bold text-white/60">
-              ${((Number(quote.oneinch?.gas || 0) * 1e9) / 1e18 * 2500).toFixed(2)}
+              ${((Number(bestQuote.data?.gas || bestQuote.data?.gasEstimate || 0) * 1e9) / 1e18 * 2500).toFixed(2)}
             </div>
           </div>
         </div>
@@ -773,7 +775,7 @@ function MonetizationPanel() {
             const oneInchNet = Number(quoteData.oneinch.dstAmount || 0) * (1 - oneInchImpact) - (Number(quoteData.oneinch.gas || 0) * 1e9);
             
             const odosImpact = quoteData.odos.priceImpact || 0;
-            const odosNet = Number(quoteData.odos.outputTokens?.[0]?.amount || 0) * (1 - odosImpact) - (Number(quoteData.odos.gasEstimate || 0) * 1e9);
+            const odosNet = Number(quoteData.odos.outAmounts?.[0] || 0) * (1 - odosImpact) - (Number(quoteData.odos.gasEstimate || 0) * 1e9);
             
             router = odosNet > oneInchNet ? 'odos' : '1inch';
             bestNetYield = Math.max(oneInchNet, odosNet);

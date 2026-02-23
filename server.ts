@@ -130,8 +130,7 @@ async function startServer() {
           }],
           userAddr: "0x0000000000000000000000000000000000000000",
           slippageLimitPercent: 0.5,
-          compact: true,
-          referralCode: 0
+          compact: true
         };
 
         const odosResponse = await axios.post(
